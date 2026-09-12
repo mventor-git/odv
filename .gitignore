@@ -1,0 +1,93 @@
+# odv .gitignore — based on ecom-erp pattern + atlas-bot private block, adapted for odv
+# Keeps secrets, live data, and local AI state out of the public repo.
+
+# ── Dependencies ──
+node_modules/
+**/node_modules/
+.pnpm-store/
+
+# ── Environment / secrets (NEVER commit) ──
+.env
+server/.env
+.env.*
+!.env.example
+credentials.md
+secrets/
+data/initial-admin.txt
+
+# ── Databases / live data (NEVER commit) ──
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.sqlite
+*.sqlite3
+data/*.db*
+data/*.bak*
+data/*.png
+data/pdfs/
+data/work/
+data/vault/
+data/test-fylers/
+data/backups/
+data/purged-logs/
+data/scans-watch/
+data/legacy/
+exports/pdf/*
+exports/docs/*
+!exports/pdf/.gitkeep
+!exports/docs/.gitkeep
+
+# ── Build output ──
+dist/
+client/dist/
+server/dist/
+build/
+
+# ── Uploads / backups ──
+server/public/uploads/
+server/backups/
+
+# ── Logs ──
+logs/
+**/logs/
+*.log
+
+# ── Agent tickets & working files (local-only, NEVER commit) ──
+tickets/
+.tickets/
+*-ticket-*.md
+muse-ticket-*.md
+mventor-ticket-*.md
+heychatgpt.md
+THINKING.md
+DC_Vault_v5_*.md
+offline-build/
+debug*.mjs
+check_sheets.mjs
+test_seed.mjs
+
+# ── Local tooling / session state ──
+.vscode/
+.idea/
+.claude/
+.gemini/
+.codex/
+.cursor/
+.muse
+.mventor
+profile.md
+PROFILE.md
+*VISION*
+.vision/
+
+# ── Scratch / probes ──
+server/_*.js
+server/_*.cjs
+server/_*.mjs
+_*.*js
+_*.py
+
+# ── OS ──
+.DS_Store
+Thumbs.db

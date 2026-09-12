@@ -1,0 +1,11 @@
+{
+  "name": "odv",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "install:all": "npm --prefix server install && npm --prefix client install",
+    "build": "npm --prefix client run build",
+    "smoke": "npm --prefix server run smoke",
+    "start": "npm --prefix server start"
+  }
+}

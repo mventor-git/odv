@@ -1,0 +1,410 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/cairo";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  color-scheme: light;
+  /* Warm neutral — Claude-like quiet surfaces (V5-021) */
+  --background: #F6F3EE;
+  --foreground: #2D2926;
+  --card: #FBF9F6;
+  --card-foreground: #2D2926;
+  --surface: #FBF9F6;
+  --surface-raised: #FFFFFF;
+  --surface-muted: #F1EDE8;
+  --popover: #FFFFFF;
+  --popover-foreground: #2D2926;
+  --primary: #C96D57;
+  --primary-foreground: #FFFFFF;
+  --secondary: #F1EDE8;
+  --secondary-foreground: #2D2926;
+  --muted: #F1EDE8;
+  --muted-foreground: #6F6861;
+  --accent: #C96D57;
+  --accent-soft: #F1D8D1;
+  --accent-foreground: #FFFFFF;
+  --destructive: #B64D48;
+  --border: #E3DDD5;
+  --input: #E3DDD5;
+  --ring: #C96D57;
+  --success: #547A61;
+  --warning: #A68A6A;
+  --chart-1: #C96D57;
+  --chart-2: #6F6861;
+  --chart-3: #958D84;
+  --chart-4: #547A61;
+  --chart-5: #B07A3C;
+  --radius: 0.75rem;
+  --sidebar: #FBF9F6;
+  --sidebar-foreground: #2D2926;
+  --sidebar-primary: #C96D57;
+  --sidebar-primary-foreground: #FFFFFF;
+  --sidebar-accent: #F1D8D1;
+  --sidebar-accent-foreground: #2D2926;
+  --sidebar-border: #E3DDD5;
+  --sidebar-ring: #C96D57;
+  --text-primary: #2D2926;
+  --text-secondary: #6F6861;
+  --text-tertiary: #958D84;
+  --focus: #C96D57;
+}
+
+body {
+  @apply bg-background text-foreground antialiased;
+  font-family: 'Geist Variable', ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Segoe UI Emoji",
+    "Noto Color Emoji";
+}
+
+[dir="rtl"] body {
+  font-family: "Cairo Variable", "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
+}
+
+/* Display serif for headings — Claude-like warm editorial feel (V5-021) */
+h1, h2, .font-display {
+  font-family: Georgia, 'Times New Roman', serif;
+  letter-spacing: -0.02em;
+}
+[dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] .font-display {
+  font-family: "Cairo Variable", sans-serif;
+  letter-spacing: 0;
+}
+
+@theme inline {
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-accent-soft: var(--accent-soft);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-muted: var(--surface-muted);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+.dark {
+  /* Warm dark — quiet, low-contrast surfaces */
+  --background: #191715;
+  --foreground: #F1ECE5;
+  --card: #211F1C;
+  --card-foreground: #F1ECE5;
+  --surface: #211F1C;
+  --surface-raised: #292622;
+  --surface-muted: #2E2B27;
+  --popover: #292622;
+  --popover-foreground: #F1ECE5;
+  --primary: #D27A62;
+  --primary-foreground: #191715;
+  --secondary: #2E2B27;
+  --secondary-foreground: #F1ECE5;
+  --muted: #2E2B27;
+  --muted-foreground: #BEB6AC;
+  --accent: #D27A62;
+  --accent-soft: #4A3029;
+  --accent-foreground: #F1ECE5;
+  --destructive: #D98A86;
+  --border: #39342F;
+  --input: #39342F;
+  --ring: #D27A62;
+  --success: #7BA68A;
+  --warning: #C2B090;
+  --chart-1: #D27A62;
+  --chart-2: #BEB6AC;
+  --chart-3: #8D867E;
+  --chart-4: #7BA68A;
+  --chart-5: #D4A76A;
+  --sidebar: #211F1C;
+  --sidebar-foreground: #F1ECE5;
+  --sidebar-primary: #D27A62;
+  --sidebar-primary-foreground: #191715;
+  --sidebar-accent: #4A3029;
+  --sidebar-accent-foreground: #F1ECE5;
+  --sidebar-border: #39342F;
+  --sidebar-ring: #D27A62;
+  --text-primary: #F1ECE5;
+  --text-secondary: #BEB6AC;
+  --text-tertiary: #8D867E;
+  --focus: #D27A62;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+  /* Variable-font artifact fix (ticket 025): no faux-bold/italic synthesis */
+  * {
+    font-synthesis: none;
+  }
+  /* Auto-direction textboxes (ticket 095): Arabic text aligns right,
+     English text aligns left — per content, in both EN and AR modes. */
+  input:not([type='date']):not([type='time']):not([type='month']):not([type='checkbox']):not([type='radio']):not([type='file']),
+  textarea {
+    unicode-bidi: plaintext;
+  }
+}
+
+/* App-like scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.85 0.01 260) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  border-radius: 8px;
+  background: oklch(0.85 0.01 260);
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+.dark *::-webkit-scrollbar-thumb {
+  background: oklch(0.35 0.03 260);
+}
+
+/* Warm cloudy app background — subtle warm paper + soft cloudy blobs (Claude-like) */
+.app-bg {
+  background:
+    radial-gradient(ellipse 90% 70% at 20% 0%, oklch(0.92 0.03 50 / 0.45), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 90% 10%, oklch(0.90 0.04 45 / 0.35), transparent 55%),
+    linear-gradient(to bottom, var(--background), oklch(0.96 0.02 55 / 1));
+}
+.dark .app-bg {
+  background:
+    radial-gradient(ellipse 90% 70% at 20% 0%, oklch(0.32 0.04 45 / 0.25), transparent 60%),
+    radial-gradient(ellipse 70% 50% at 90% 10%, oklch(0.30 0.03 50 / 0.20), transparent 55%),
+    linear-gradient(to bottom, var(--background), oklch(0.22 0.02 45 / 1));
+}
+
+/* Ambient background (ticket 075) — calm blobs that always
+   drift behind the app. GPU-friendly (transform/opacity only), never stops,
+   never blocks clicks. */
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ambient-blob {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(90px);
+  opacity: 0.5;
+  will-change: transform;
+  animation: ambient-drift 90s ease-in-out infinite alternate;
+}
+.ambient-blob-1 {
+  width: 42vw;
+  height: 42vw;
+  top: -12%;
+  inset-inline-start: -8%;
+  background: oklch(0.75 0.03 60 / 0.15);
+  animation-duration: 110s;
+}
+.ambient-blob-2 {
+  width: 36vw;
+  height: 36vw;
+  bottom: -14%;
+  inset-inline-end: -6%;
+  background: oklch(0.78 0.02 60 / 0.12);
+  animation-duration: 130s;
+  animation-delay: -40s;
+}
+.ambient-blob-3 {
+  width: 26vw;
+  height: 26vw;
+  top: 38%;
+  inset-inline-start: 46%;
+  background: oklch(0.80 0.02 70 / 0.10);
+  animation-duration: 160s;
+  animation-delay: -80s;
+}
+.dark .ambient-blob-1 {
+  background: oklch(0.35 0.02 60 / 0.08);
+}
+.dark .ambient-blob-2 {
+  background: oklch(0.32 0.02 60 / 0.06);
+}
+.dark .ambient-blob-3 {
+  background: oklch(0.38 0.02 70 / 0.05);
+}
+@keyframes ambient-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6vw, -4vh, 0) scale(1.12);
+  }
+  100% {
+    transform: translate3d(-5vw, 5vh, 0) scale(0.94);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ambient-blob {
+    animation: none;
+  }
+}
+
+/* Floating notify icon (ticket 073 round 2) — the icon expands into the note.
+   The note scales from the icon's corner (origin set by the placement side). */
+.notify-float-open {
+  animation: notify-pulse 0.4s ease-out;
+}
+@keyframes notify-pulse {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.notify-note {
+  animation: notify-expand 0.28s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: bottom start;
+}
+@keyframes notify-expand {
+  from {
+    transform: scale(0.25);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Warm quiet surfaces — Claude-like (V5-021 → V5-022 migration).
+   The legacy .glass-* names are kept as aliases so existing components
+   instantly adopt the new warm theme without touching 30 files. New code
+   should use .surface-card / .surface-muted directly. */
+.glass-card,
+.surface-card {
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.04), 0 4px 12px oklch(0 0 0 / 0.04);
+}
+.dark .glass-card,
+.dark .surface-card {
+  border-color: var(--border);
+  background: var(--card);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.25), 0 4px 12px oklch(0 0 0 / 0.2);
+}
+
+/* Legacy alias for panels — quiet muted surface */
+.glass-surface,
+.surface-muted {
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.03);
+}
+.dark .glass-surface,
+.dark .surface-muted {
+  border-color: var(--border);
+  background: var(--surface-muted);
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.2);
+}
+
+/* Blueprint grid — very subtle warm paper grid, like Claude's quiet texture */
+.blueprint-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(oklch(0.92 0.01 60 / 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.92 0.01 60 / 0.07) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 85% 65% at 50% 20%, black 40%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse 85% 65% at 50% 20%, black 40%, transparent 75%);
+}
+.dark .blueprint-grid {
+  background-image:
+    linear-gradient(oklch(0.55 0.02 60 / 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, oklch(0.55 0.02 60 / 0.08) 1px, transparent 1px);
+}
+
+/* Ambient blobs — warm cloudy, visible now (Claude-like soft paper) */
+.ambient-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.surface-card:hover,
+.glass-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.06);
+}
+.dark .surface-card:hover,
+.dark .glass-card:hover {
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.25);
+}
+
+/* Full-page smooth transition for AR↔EN and dark↔light (user request) */
+html.page-switching,
+html.page-switching body {
+  transition: background-color 0.45s ease, color 0.45s ease;
+}
+html.page-switching #root {
+  animation: pageSwitchFade 0.45s ease;
+}
+@keyframes pageSwitchFade {
+  0% { opacity: 0.6; transform: scale(0.99) translateY(4px); filter: blur(2px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+}
+html.page-switching .app-bg {
+  transition: background-color 0.45s ease;
+}
+* {
+  scrollbar-gutter: stable;
+}
+@media (prefers-reduced-motion: reduce) {
+  html.page-switching #root { animation: none; }
+}

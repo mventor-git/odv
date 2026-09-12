@@ -1,0 +1,25 @@
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: |
+          npm --prefix server install
+          npm --prefix client install
+      - name: Typecheck Server
+        run: npm --prefix server run typecheck
+      - name: Build Client
+        run: npm --prefix client run build
+      - name: Run Smoke Tests
+        run: npm --prefix server run smoke
