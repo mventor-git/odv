@@ -6,6 +6,7 @@ import { rateLimit } from 'express-rate-limit';
 import type { DatabaseSync } from 'node:sqlite';
 import { PROJECT_ROOT, type Config } from './config.ts';
 import { authRouter } from './routes/auth.ts';
+import { auditRouter } from './routes/audit.ts';
 import { filesRouter } from './routes/files.ts';
 import { legacyRouter } from './routes/legacy.ts';
 import { logsRouter } from './routes/logs.ts';
@@ -100,6 +101,7 @@ export function createApp(db: DatabaseSync, config: Config): express.Express {
   app.use('/api/identifier', identifierRouter(db, domainRegistry, config));
   app.use('/api/clusters', clustersRouter(db));
   app.use('/api/logs', logsRouter(db));
+  app.use('/api/audit', auditRouter(db));
   app.use('/api/files', filesRouter(db, config));
   app.use('/api/legacy', legacyRouter(db, config));
 

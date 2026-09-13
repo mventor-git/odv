@@ -226,6 +226,296 @@ CREATE TABLE IF NOT EXISTS roles (
   name TEXT PRIMARY KEY
 );
 
+-- mventor-ticket-001: Org/Project foundation (additive; no route/seed/behavior change).
+-- Organization = sovereignty boundary (owns people, policies, AI config).
+-- Project = governed collaboration context (NOT owned by one org).
+-- ScopeAssignment versions who-owns-what-slice over time; cluster_code stays
+-- plain TEXT until the legacy clusters table is retired as source of truth.
+CREATE TABLE IF NOT EXISTS organizations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  kind TEXT NOT NULL DEFAULT 'contractor' CHECK (kind IN ('owner','consultant','contractor','external')),
+  name TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS project_participants (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  organization_id INTEGER NOT NULL REFERENCES organizations(id),
+  role TEXT NOT NULL DEFAULT 'contractor' CHECK (role IN ('owner','consultant','contractor','external')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, organization_id, role)
+);
+CREATE TABLE IF NOT EXISTS contract_packages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  code TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, code)
+);
+CREATE TABLE IF NOT EXISTS scope_assignments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  contract_package_id INTEGER REFERENCES contract_packages(id),
+  contractor_org_id INTEGER NOT NULL REFERENCES organizations(id),
+  cluster_code TEXT NOT NULL DEFAULT '',
+  discipline TEXT NOT NULL DEFAULT '',
+  valid_from TEXT NOT NULL DEFAULT '',
+  valid_to TEXT NOT NULL DEFAULT '',
+  version INTEGER NOT NULL DEFAULT 1,
+  supersedes_id INTEGER REFERENCES scope_assignments(id),
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','released','handed_over')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scope_project ON scope_assignments(project_id);
+CREATE INDEX IF NOT EXISTS idx_scope_contractor ON scope_assignments(contractor_org_id);
+
+-- mventor-ticket-002: Requirement + ExecutionLot (additive; part 1 of the split).
+-- Requirement = what must be accomplished per Protocol (Consultant-owned truth).
+-- ExecutionLot = contractor-proposed partition of one requirement (e.g. 50
+-- columns as 25+25); the number of lots/requests is an execution result, never
+-- the baseline. Domain specifics live in payload_json — no construction nouns
+-- in columns so the core stays reusable.
+CREATE TABLE IF NOT EXISTS requirements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  contract_package_id INTEGER REFERENCES contract_packages(id),
+  scope_assignment_id INTEGER REFERENCES scope_assignments(id),
+  code TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'work' CHECK (kind IN ('work','deliverable','inspection','test','document','other')),
+  status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','active','completed','closed','cancelled')),
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, code)
+);
+CREATE TABLE IF NOT EXISTS execution_lots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  requirement_id INTEGER NOT NULL REFERENCES requirements(id),
+  proposed_by_org_id INTEGER NOT NULL REFERENCES organizations(id),
+  code TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  sequence INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','accepted','rejected','superseded','withdrawn')),
+  supersedes_id INTEGER REFERENCES execution_lots(id),
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (requirement_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_req_project ON requirements(project_id);
+CREATE INDEX IF NOT EXISTS idx_lot_requirement ON execution_lots(requirement_id);
+
+-- mventor-ticket-003: Case + Task (additive; part 2a — internal-organization side).
+-- Case = business context grouping tasks/requests/reviews/tests/evidence/decisions.
+-- Task = instruction to an org (person-level assignment arrives with the identity
+-- model). project_id is a direct anchor so work queues never need a case join;
+-- case_id stays NULLABLE because dispatch may precede case formation.
+CREATE TABLE IF NOT EXISTS cases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  code TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  kind TEXT NOT NULL DEFAULT 'work_package' CHECK (kind IN ('work_package','submittal_package','inspection_batch','exception','other')),
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','closed','cancelled')),
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, code)
+);
+CREATE TABLE IF NOT EXISTS tasks (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  case_id INTEGER REFERENCES cases(id),
+  requirement_id INTEGER REFERENCES requirements(id),
+  execution_lot_id INTEGER REFERENCES execution_lots(id),
+  assignee_org_id INTEGER REFERENCES organizations(id),
+  title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'assigned' CHECK (status IN ('assigned','in_progress','done','verified','cancelled')),
+  due_date TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_case_project ON cases(project_id);
+CREATE INDEX IF NOT EXISTS idx_task_project ON tasks(project_id);
+CREATE INDEX IF NOT EXISTS idx_task_case ON tasks(case_id);
+CREATE INDEX IF NOT EXISTS idx_task_assignee ON tasks(assignee_org_id);
+
+-- mventor-ticket-004: Submission + Evidence (additive; part 2b — cross-org side).
+-- Submission = formal transaction to another party (future home of records rows;
+-- cutover is a later ticket, never silent). type is deliberately unchecked TEXT:
+-- request types become per-Protocol config (BACKLOG #3). status encodes the
+-- generic machine; per-type transition rules come later.
+-- Evidence = proof attachable to ANY object, hence polymorphic subject
+-- (subject_type+subject_id) instead of N nullable FKs. hash/file_ref are
+-- reserved for the content-ID vault (BACKLOG #6).
+CREATE TABLE IF NOT EXISTS submissions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  case_id INTEGER REFERENCES cases(id),
+  task_id INTEGER REFERENCES tasks(id),
+  execution_lot_id INTEGER REFERENCES execution_lots(id),
+  submitted_by_org_id INTEGER NOT NULL REFERENCES organizations(id),
+  submitted_to_org_id INTEGER REFERENCES organizations(id),
+  type TEXT NOT NULL DEFAULT '',
+  number TEXT NOT NULL DEFAULT '',
+  revision_no TEXT NOT NULL DEFAULT '00',
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','under_review','approved','approved_as_noted','revise_resubmit','rejected','partially_accepted','split_required','closed','superseded','withdrawn')),
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, type, number, revision_no)
+);
+CREATE TABLE IF NOT EXISTS evidence (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  subject_type TEXT NOT NULL DEFAULT '',
+  subject_id INTEGER NOT NULL DEFAULT 0,
+  captured_by_org_id INTEGER REFERENCES organizations(id),
+  kind TEXT NOT NULL DEFAULT 'document' CHECK (kind IN ('photo','document','test_result','measurement','delivery_note','certificate','drawing','other')),
+  hash TEXT NOT NULL DEFAULT '',
+  file_ref TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sub_project ON submissions(project_id);
+CREATE INDEX IF NOT EXISTS idx_sub_lot ON submissions(execution_lot_id);
+CREATE INDEX IF NOT EXISTS idx_ev_subject ON evidence(subject_type, subject_id);
+
+-- mventor-ticket-007: Identity model (additive; GAP-IDENT foundation half).
+-- Person ≠ job title ≠ project role. persons = bare identity (no PII, no org FK).
+-- Authority flows: membership (employment fact) → role_assignment (project authority
+-- in a scope/time window) → delegation (time-boxed transfer with reason).
+-- Expiry is DERIVED from valid_to in queries — never by rewriting history rows.
+-- Assignment scope stays TEXT until structured scope objects land (same precedent
+-- as scope_assignment.cluster_code). Support-mode actor fields arrive with
+-- GAP-SUPPORT, not here.
+CREATE TABLE IF NOT EXISTS persons (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS org_memberships (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_id INTEGER NOT NULL REFERENCES persons(id),
+  organization_id INTEGER NOT NULL REFERENCES organizations(id),
+  job_title TEXT NOT NULL DEFAULT '',
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (person_id, organization_id)
+);
+CREATE TABLE IF NOT EXISTS project_roles (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  code TEXT NOT NULL DEFAULT '',
+  title TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, code)
+);
+CREATE TABLE IF NOT EXISTS role_assignments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_id INTEGER NOT NULL REFERENCES persons(id),
+  project_role_id INTEGER NOT NULL REFERENCES project_roles(id),
+  organization_id INTEGER NOT NULL REFERENCES organizations(id),
+  scope TEXT NOT NULL DEFAULT '',
+  valid_from TEXT NOT NULL DEFAULT '',
+  valid_to TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','revoked')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS delegations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  from_assignment_id INTEGER NOT NULL REFERENCES role_assignments(id),
+  to_person_id INTEGER NOT NULL REFERENCES persons(id),
+  reason TEXT NOT NULL DEFAULT '',
+  valid_from TEXT NOT NULL DEFAULT '',
+  valid_to TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_assign_person ON role_assignments(person_id);
+CREATE INDEX IF NOT EXISTS idx_assign_role ON role_assignments(project_role_id);
+CREATE INDEX IF NOT EXISTS idx_deleg_from ON delegations(from_assignment_id);
+
+-- mventor-ticket-008: Append-only audit trail (additive; GAP-AUDIT foundation half).
+-- Every important action is a fact row: who (person/org/role-context; NULL person =
+-- system actor) × where (project) × what (polymorphic subject) × action × why.
+-- Rows are facts, never state — no status column. Corrections are compensating
+-- rows, never rewrites: the triggers below ABORT any UPDATE/DELETE at the DB
+-- level (same trigger mechanism as records_fts_*, opposite intent).
+CREATE TABLE IF NOT EXISTS audit_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_id INTEGER REFERENCES persons(id),
+  organization_id INTEGER REFERENCES organizations(id),
+  role_context TEXT NOT NULL DEFAULT '',
+  project_id INTEGER REFERENCES projects(id),
+  subject_type TEXT NOT NULL DEFAULT '',
+  subject_id INTEGER NOT NULL DEFAULT 0,
+  action TEXT NOT NULL DEFAULT '',
+  reason TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TRIGGER IF NOT EXISTS audit_events_no_update BEFORE UPDATE ON audit_events BEGIN
+  SELECT RAISE(ABORT, 'audit_events is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS audit_events_no_delete BEFORE DELETE ON audit_events BEGIN
+  SELECT RAISE(ABORT, 'audit_events is append-only');
+END;
+CREATE INDEX IF NOT EXISTS idx_audit_subject ON audit_events(subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_events(project_id);
+
+-- mventor-ticket-009: Material/resource domain (additive; GAP-MAT domain half).
+-- Materials are execution resources, not stock numbers: definition (what it is,
+-- project catalog) → lot (which batch/delivery, whose supply) → events (where
+-- it moved / how it was consumed). Inspection is NOT an event kind — it lives
+-- in submissions (MIR) + evidence, linked via material_events.evidence_id.
+-- No balances, no prices, no GL: ODV answers "what evidence supports this
+-- quantity", never accounting. Consumption→execution linkage stays in payload
+-- until the enforcement API types it.
+CREATE TABLE IF NOT EXISTS material_defs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES projects(id),
+  code TEXT NOT NULL DEFAULT '',
+  name TEXT NOT NULL DEFAULT '',
+  unit TEXT NOT NULL DEFAULT '',
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, code)
+);
+CREATE TABLE IF NOT EXISTS material_lots (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  def_id INTEGER NOT NULL REFERENCES material_defs(id),
+  code TEXT NOT NULL DEFAULT '',
+  quantity REAL NOT NULL DEFAULT 0,
+  source_kind TEXT NOT NULL DEFAULT 'contractor_supplied' CHECK (source_kind IN ('contractor_supplied','owner_supplied')),
+  supplier_org_id INTEGER REFERENCES organizations(id),
+  status TEXT NOT NULL DEFAULT 'expected' CHECK (status IN ('expected','received','accepted','rejected','consumed','returned','wasted')),
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (def_id, code)
+);
+CREATE TABLE IF NOT EXISTS material_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  lot_id INTEGER NOT NULL REFERENCES material_lots(id),
+  kind TEXT NOT NULL DEFAULT 'receipt' CHECK (kind IN ('purchase','receipt','storage_transfer','consumption','return','waste')),
+  quantity REAL NOT NULL DEFAULT 0,
+  from_ref TEXT NOT NULL DEFAULT '',
+  to_ref TEXT NOT NULL DEFAULT '',
+  evidence_id INTEGER REFERENCES evidence(id),
+  payload_json TEXT NOT NULL DEFAULT '{}',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_lot_def ON material_lots(def_id);
+CREATE INDEX IF NOT EXISTS idx_evt_lot ON material_events(lot_id);
+
 -- User-added scan machines (ticket 067) — the built-in catalog lives in
 -- domain.ts (SCAN_SERIES); admins can add custom printers here.
 CREATE TABLE IF NOT EXISTS scan_models (
@@ -581,7 +871,7 @@ function migrateRecordsActiveKeyUnique(db: DatabaseSync): void {
 
 /** V5-003: Current migration level. New databases start here — they get all
  *  tables created by SCHEMA and skip the numbered migrations below. */
-const CURRENT_VERSION = 27;
+const CURRENT_VERSION = 34;
 
 /** V5-003: Named migration list. Each entry runs at most once, tracked in
  *  schema_version. Order matters — later migrations may depend on earlier ones. */
@@ -613,6 +903,27 @@ const MIGRATIONS: Array<{ version: number; name: string; sql: string }> = [
   { version: 25, name: 'project-id-identity', sql: '' }, // handled programmatically (project_id + logo ext keys)
   { version: 26, name: 'app_notifications-deleted_at', sql: "ALTER TABLE app_notifications ADD COLUMN deleted_at TEXT NOT NULL DEFAULT ''" },
   { version: 27, name: 'rfi-ncr-correct-columns', sql: '' }, // handled programmatically (RFI normal / NCR inverted)
+  // mventor-ticket-001: Org/Project foundation for existing DBs (fresh DBs get
+  // these from SCHEMA; CREATE IF NOT EXISTS keeps this idempotent either way).
+  { version: 28, name: 'org-project-foundation', sql: `CREATE TABLE IF NOT EXISTS organizations (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'contractor' CHECK (kind IN ('owner','consultant','contractor','external')), name TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS projects (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active', created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS project_participants (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), organization_id INTEGER NOT NULL REFERENCES organizations(id), role TEXT NOT NULL DEFAULT 'contractor' CHECK (role IN ('owner','consultant','contractor','external')), created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, organization_id, role)); CREATE TABLE IF NOT EXISTS contract_packages (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), code TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, code)); CREATE TABLE IF NOT EXISTS scope_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), contract_package_id INTEGER REFERENCES contract_packages(id), contractor_org_id INTEGER NOT NULL REFERENCES organizations(id), cluster_code TEXT NOT NULL DEFAULT '', discipline TEXT NOT NULL DEFAULT '', valid_from TEXT NOT NULL DEFAULT '', valid_to TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1, supersedes_id INTEGER REFERENCES scope_assignments(id), status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','released','handed_over')), created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_scope_project ON scope_assignments(project_id); CREATE INDEX IF NOT EXISTS idx_scope_contractor ON scope_assignments(contractor_org_id)` },
+  // mventor-ticket-002: Requirement + ExecutionLot for existing DBs (fresh DBs
+  // get these from SCHEMA; CREATE IF NOT EXISTS keeps this idempotent).
+  { version: 29, name: 'requirement-lot-foundation', sql: `CREATE TABLE IF NOT EXISTS requirements (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), contract_package_id INTEGER REFERENCES contract_packages(id), scope_assignment_id INTEGER REFERENCES scope_assignments(id), code TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'work' CHECK (kind IN ('work','deliverable','inspection','test','document','other')), status TEXT NOT NULL DEFAULT 'planned' CHECK (status IN ('planned','active','completed','closed','cancelled')), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, code)); CREATE TABLE IF NOT EXISTS execution_lots (id INTEGER PRIMARY KEY AUTOINCREMENT, requirement_id INTEGER NOT NULL REFERENCES requirements(id), proposed_by_org_id INTEGER NOT NULL REFERENCES organizations(id), code TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', sequence INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'proposed' CHECK (status IN ('proposed','accepted','rejected','superseded','withdrawn')), supersedes_id INTEGER REFERENCES execution_lots(id), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (requirement_id, code)); CREATE INDEX IF NOT EXISTS idx_req_project ON requirements(project_id); CREATE INDEX IF NOT EXISTS idx_lot_requirement ON execution_lots(requirement_id)` },
+  // mventor-ticket-003: Case + Task for existing DBs (fresh DBs get these from
+  // SCHEMA; CREATE IF NOT EXISTS keeps this idempotent).
+  { version: 30, name: 'case-task-foundation', sql: `CREATE TABLE IF NOT EXISTS cases (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), code TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT 'work_package' CHECK (kind IN ('work_package','submittal_package','inspection_batch','exception','other')), status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','closed','cancelled')), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, code)); CREATE TABLE IF NOT EXISTS tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), case_id INTEGER REFERENCES cases(id), requirement_id INTEGER REFERENCES requirements(id), execution_lot_id INTEGER REFERENCES execution_lots(id), assignee_org_id INTEGER REFERENCES organizations(id), title TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'assigned' CHECK (status IN ('assigned','in_progress','done','verified','cancelled')), due_date TEXT NOT NULL DEFAULT '', payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_case_project ON cases(project_id); CREATE INDEX IF NOT EXISTS idx_task_project ON tasks(project_id); CREATE INDEX IF NOT EXISTS idx_task_case ON tasks(case_id); CREATE INDEX IF NOT EXISTS idx_task_assignee ON tasks(assignee_org_id)` },
+  // mventor-ticket-004: Submission + Evidence for existing DBs (fresh DBs get
+  // these from SCHEMA; CREATE IF NOT EXISTS keeps this idempotent).
+  { version: 31, name: 'submission-evidence-foundation', sql: `CREATE TABLE IF NOT EXISTS submissions (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), case_id INTEGER REFERENCES cases(id), task_id INTEGER REFERENCES tasks(id), execution_lot_id INTEGER REFERENCES execution_lots(id), submitted_by_org_id INTEGER NOT NULL REFERENCES organizations(id), submitted_to_org_id INTEGER REFERENCES organizations(id), type TEXT NOT NULL DEFAULT '', number TEXT NOT NULL DEFAULT '', revision_no TEXT NOT NULL DEFAULT '00', status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','under_review','approved','approved_as_noted','revise_resubmit','rejected','partially_accepted','split_required','closed','superseded','withdrawn')), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, type, number, revision_no)); CREATE TABLE IF NOT EXISTS evidence (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), subject_type TEXT NOT NULL DEFAULT '', subject_id INTEGER NOT NULL DEFAULT 0, captured_by_org_id INTEGER REFERENCES organizations(id), kind TEXT NOT NULL DEFAULT 'document' CHECK (kind IN ('photo','document','test_result','measurement','delivery_note','certificate','drawing','other')), hash TEXT NOT NULL DEFAULT '', file_ref TEXT NOT NULL DEFAULT '', payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_sub_project ON submissions(project_id); CREATE INDEX IF NOT EXISTS idx_sub_lot ON submissions(execution_lot_id); CREATE INDEX IF NOT EXISTS idx_ev_subject ON evidence(subject_type, subject_id)` },
+  // mventor-ticket-007: Identity model for existing DBs (fresh DBs get these
+  // from SCHEMA; CREATE IF NOT EXISTS keeps this idempotent).
+  { version: 32, name: 'identity-foundation', sql: `CREATE TABLE IF NOT EXISTS persons (id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL UNIQUE, display_name TEXT NOT NULL DEFAULT '', payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS org_memberships (id INTEGER PRIMARY KEY AUTOINCREMENT, person_id INTEGER NOT NULL REFERENCES persons(id), organization_id INTEGER NOT NULL REFERENCES organizations(id), job_title TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (person_id, organization_id)); CREATE TABLE IF NOT EXISTS project_roles (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), code TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, code)); CREATE TABLE IF NOT EXISTS role_assignments (id INTEGER PRIMARY KEY AUTOINCREMENT, person_id INTEGER NOT NULL REFERENCES persons(id), project_role_id INTEGER NOT NULL REFERENCES project_roles(id), organization_id INTEGER NOT NULL REFERENCES organizations(id), scope TEXT NOT NULL DEFAULT '', valid_from TEXT NOT NULL DEFAULT '', valid_to TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','suspended','revoked')), created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE TABLE IF NOT EXISTS delegations (id INTEGER PRIMARY KEY AUTOINCREMENT, from_assignment_id INTEGER NOT NULL REFERENCES role_assignments(id), to_person_id INTEGER NOT NULL REFERENCES persons(id), reason TEXT NOT NULL DEFAULT '', valid_from TEXT NOT NULL DEFAULT '', valid_to TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','revoked')), created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_assign_person ON role_assignments(person_id); CREATE INDEX IF NOT EXISTS idx_assign_role ON role_assignments(project_role_id); CREATE INDEX IF NOT EXISTS idx_deleg_from ON delegations(from_assignment_id)` },
+  // mventor-ticket-008: programmatic — trigger bodies contain semicolons so this
+  // cannot go through the naive ';' splitter (see applyMigration).
+  { version: 33, name: 'audit-trail', sql: '' },
+  // mventor-ticket-009: material domain for existing DBs (fresh DBs get these
+  // from SCHEMA; no semicolon-bearing bodies here so inline SQL is safe).
+  { version: 34, name: 'material-foundation', sql: `CREATE TABLE IF NOT EXISTS material_defs (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), code TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', unit TEXT NOT NULL DEFAULT '', payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, code)); CREATE TABLE IF NOT EXISTS material_lots (id INTEGER PRIMARY KEY AUTOINCREMENT, def_id INTEGER NOT NULL REFERENCES material_defs(id), code TEXT NOT NULL DEFAULT '', quantity REAL NOT NULL DEFAULT 0, source_kind TEXT NOT NULL DEFAULT 'contractor_supplied' CHECK (source_kind IN ('contractor_supplied','owner_supplied')), supplier_org_id INTEGER REFERENCES organizations(id), status TEXT NOT NULL DEFAULT 'expected' CHECK (status IN ('expected','received','accepted','rejected','consumed','returned','wasted')), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (def_id, code)); CREATE TABLE IF NOT EXISTS material_events (id INTEGER PRIMARY KEY AUTOINCREMENT, lot_id INTEGER NOT NULL REFERENCES material_lots(id), kind TEXT NOT NULL DEFAULT 'receipt' CHECK (kind IN ('purchase','receipt','storage_transfer','consumption','return','waste')), quantity REAL NOT NULL DEFAULT 0, from_ref TEXT NOT NULL DEFAULT '', to_ref TEXT NOT NULL DEFAULT '', evidence_id INTEGER REFERENCES evidence(id), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_lot_def ON material_lots(def_id); CREATE INDEX IF NOT EXISTS idx_evt_lot ON material_events(lot_id)` },
 ];
 
 /** V5-003: Get the current max version from schema_version. */
@@ -637,6 +948,7 @@ function applyMigration(db: DatabaseSync, migration: { version: number; name: st
   if (migration.version === 24) { addFloorsCluster(db); return; }
   if (migration.version === 25) { seedProjectIdentity(db); return; }
   if (migration.version === 27) { fixRfiNcrColumns(db); return; }
+  if (migration.version === 33) { applyAuditTrail(db); return; }
   if (!migration.sql) return;
 
   db.exec('BEGIN');
@@ -735,12 +1047,40 @@ function seedProjectIdentity(db: DatabaseSync): void {
   console.log(`[odv] Migration 25 (project-id-identity): ensured project_id + logo ext keys.`);
 }
 
+/** mventor-ticket-008: Programmatic migration — create audit_events plus its
+ *  append-only triggers (trigger bodies contain semicolons, so they cannot go
+ *  through the ';' splitter). Idempotent via IF NOT EXISTS + version record. */
+function applyAuditTrail(db: DatabaseSync): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    person_id INTEGER REFERENCES persons(id),
+    organization_id INTEGER REFERENCES organizations(id),
+    role_context TEXT NOT NULL DEFAULT '',
+    project_id INTEGER REFERENCES projects(id),
+    subject_type TEXT NOT NULL DEFAULT '',
+    subject_id INTEGER NOT NULL DEFAULT 0,
+    action TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL DEFAULT '',
+    payload_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  )`);
+  db.exec(`CREATE TRIGGER IF NOT EXISTS audit_events_no_update BEFORE UPDATE ON audit_events BEGIN
+    SELECT RAISE(ABORT, 'audit_events is append-only');
+  END`);
+  db.exec(`CREATE TRIGGER IF NOT EXISTS audit_events_no_delete BEFORE DELETE ON audit_events BEGIN
+    SELECT RAISE(ABORT, 'audit_events is append-only');
+  END`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_audit_subject ON audit_events(subject_type, subject_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_audit_project ON audit_events(project_id)');
+  db.exec(`INSERT OR IGNORE INTO schema_version (version, name) VALUES (33, 'audit-trail')`);
+  console.log('[odv] Migration 33 (audit-trail): ensured audit_events + append-only triggers.');
+}
+
 /** Ticket 136: RFI is a normal request (contractor sends sentDate, consultant
  *  replies replyDate); NCR is inverted (consultant sends sentByConsultantDate,
  *  contractor replies replyByContractorDate). Patch the live
  *  domain_categories.columns_json for existing DBs (the /api/meta source of
- *  truth). Idempotent. */
-function fixRfiNcrColumns(db: DatabaseSync): void {
+ *  truth). Idempotent. */function fixRfiNcrColumns(db: DatabaseSync): void {
   db.prepare('UPDATE domain_categories SET columns_json = ? WHERE code = ?').run(
     JSON.stringify(COLS_RFI),
     'RFI',

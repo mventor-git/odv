@@ -1,0 +1,7 @@
+# DECISIONS
+
+2026-09-12 — keep single Express+SQLite monolith; no microservices until ticketed. Reason: repo reality + profile §7.
+2026-09-12 — agent split: MUSE owns profile.md/.muse; Mventor owns .mventor/tickets/docs-state. Reason: avoid overwrite.
+2026-09-12 (005) — per-type lifecycles live in DATA (domain_transitions scoped by category now, by submission-type later), never per-type code machines; submissions.status CHECK is the shared superset vocabulary. Reason: repo already proves the pattern (9 global data rows + admin UI + records.ts enforcement).
+2026-09-12 (005) — records cutover strategy (recommended): records stay live; later ticket writes dual (records+submissions); reads switch per-type after parity; history never silently migrated. Alternatives: big-bang rewrite (rejected: destroys audit), shadow-only (rejected: double source of truth). Human confirms before cutover ticket.
+2026-09-12 (006 GATE) — foundation FIT for next slices, NOT cleared for broad feature development (person/audit/material/support enforcement missing). Tasks are working data (reassignable UPDATE); submissions/evidence are official (INSERT-only discipline until audit table lands). Identity model is the recommended next slice (unblocks accountability for all later work). No contradiction resolved silently: legacy codes mapped (005), clusters parallel pending cutover, building hierarchy deferred.

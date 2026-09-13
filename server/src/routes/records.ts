@@ -3,6 +3,7 @@ import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { adminRequired, authRequired } from '../auth.ts';
 import type { DomainRegistry } from '../domain-registry.ts';
 import { logEvent } from './logs.ts';
+import { emitAudit } from '../audit.ts';
 
 /** Display padding for revision numbers in log text: "1" → "01" (stored values untouched). */
 export function padRev(rev: string | null | undefined): string {
@@ -447,6 +448,17 @@ export function recordsRouter(db: DatabaseSync, registry: DomainRegistry): Route
       `${category} ${requestNo}`,
       `Created ${category} ${requestNo} rev ${revisionNo || '00'} (${String(data.status ?? 'P')})`,
     );
+    // mventor-ticket-011: foundation audit (append-only, fail-safe; legacy untouched).
+    emitAudit(db, {
+      roleContext: `legacy:${req.user!.role}`,
+      subjectType: 'legacy_record',
+      subjectId: row.id,
+      action: 'legacy.record.created',
+      payload: {
+        actor_username: req.user!.username,
+        category, request_no: requestNo, revision_no: revisionNo, status: String(data.status ?? 'P'),
+      },
+    });
     // Status law (ticket 033): grading C holds a PP placeholder for the next revision.
     if (String(data.status ?? 'P') === 'C') createPlaceholder(db, row);
     res.status(201).json(toApi(row));
@@ -542,6 +554,18 @@ export function recordsRouter(db: DatabaseSync, registry: DomainRegistry): Route
       `${updated.category} ${updated.request_no}${updated.revision_no ? ' rev ' + padRev(updated.revision_no) : ''}`,
       changes ? `Updated: ${changes}` : 'Updated record',
     );
+    // mventor-ticket-011: foundation audit (status transitions captured in payload).
+    emitAudit(db, {
+      roleContext: `legacy:${req.user!.role}`,
+      subjectType: 'legacy_record',
+      subjectId: updated.id,
+      action: 'legacy.record.updated',
+      payload: {
+        actor_username: req.user!.username,
+        changes: changed,
+        ...(prevStatus !== nextStatus ? { status_from: prevStatus, status_to: nextStatus } : {}),
+      },
+    });
     res.json(toApi(updated));
   });
 
@@ -562,6 +586,14 @@ r.delete('/:id', adminRequired, (req, res) => {
       `${row.category} ${row.request_no}`,
       `Trashed ${row.category} ${row.request_no}${row.revision_no ? ' rev ' + padRev(row.revision_no) : ''}`,
     );
+    // mventor-ticket-011: foundation audit.
+    emitAudit(db, {
+      roleContext: `legacy:${req.user!.role}`,
+      subjectType: 'legacy_record',
+      subjectId: row.id,
+      action: 'legacy.record.trashed',
+      payload: { actor_username: req.user!.username, category: row.category, request_no: row.request_no },
+    });
     res.json({ ok: true });
   });
 
@@ -594,6 +626,14 @@ r.delete('/:id', adminRequired, (req, res) => {
       `${row.category} ${row.request_no}`,
       `Super-edited all revisions (${affected.changes} rows): zone/floor/member/desc/sentDate`,
     );
+    // mventor-ticket-011: foundation audit.
+    emitAudit(db, {
+      roleContext: `legacy:${req.user!.role}`,
+      subjectType: 'legacy_record',
+      subjectId: row.id,
+      action: 'legacy.record.super_edited',
+      payload: { actor_username: req.user!.username, affected: affected.changes },
+    });
     res.json({ ok: true, affected: affected.changes });
   });
 
@@ -647,6 +687,14 @@ r.delete('/:id', adminRequired, (req, res) => {
       `${created.category} ${created.request_no}`,
       `New revision ${padRev(created.revision_no)} (suggested ${status}) for ${created.category} ${created.request_no}`,
     );
+    // mventor-ticket-011: foundation audit.
+    emitAudit(db, {
+      roleContext: `legacy:${req.user!.role}`,
+      subjectType: 'legacy_record',
+      subjectId: created.id,
+      action: 'legacy.record.revision',
+      payload: { actor_username: req.user!.username, revision_no: created.revision_no, parent_id: row.id },
+    });
     res.status(201).json({ ...toApi(created), suggested: true });
   });
 
