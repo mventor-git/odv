@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
 import { adminRequired, authRequired } from '../auth.ts';
-import type { DomainRegistry } from '../domain-registry.ts';
+import type { DomainRegistry, TransitionSnapshot } from '../domain-registry.ts';
 import { logEvent } from './logs.ts';
 import { emitAudit } from '../audit.ts';
+import { personIdForUser } from '../identity.ts';
 
 /** Display padding for revision numbers in log text: "1" → "01" (stored values untouched). */
 export function padRev(rev: string | null | undefined): string {
@@ -450,7 +451,7 @@ export function recordsRouter(db: DatabaseSync, registry: DomainRegistry): Route
     );
     // mventor-ticket-011: foundation audit (append-only, fail-safe; legacy untouched).
     emitAudit(db, {
-      roleContext: `legacy:${req.user!.role}`,
+      personId: personIdForUser(db, req.user!.id), roleContext: `legacy:${req.user!.role}`,
       subjectType: 'legacy_record',
       subjectId: row.id,
       action: 'legacy.record.created',
@@ -497,13 +498,48 @@ export function recordsRouter(db: DatabaseSync, registry: DomainRegistry): Route
       }
     }
     // Status transition laws (ticket 033 + registry).
+    // mventor-ticket-013: enforcement — category rows override/extend global
+    // rows (domain_transitions.category_code), requires_admin and
+    // requires_due_date are honoured, every status-change attempt is audited
+    // (allowed AND denied), and a denial never mutates the row.
     const prevStatus = row.status;
     const nextStatus = String(merged.status ?? row.status);
-    if (prevStatus !== nextStatus) {
-      const allowed = allowedTransitionsFor(registry, prevStatus);
-      if (allowed.length > 0 && !allowed.includes(nextStatus)) {
-        res.status(400).json({ error: `Status ${prevStatus} can only change to ${allowed.join(', ')}` });
-        return;
+    const statusChanging = prevStatus !== nextStatus;
+    let ruleSource: 'category' | 'global' | 'none' = 'none';
+    const auditTransition = (allowed: boolean, reason: string) =>
+      emitAudit(db, {
+        personId: personIdForUser(db, req.user!.id), roleContext: `legacy:${req.user!.role}`,
+        subjectType: 'legacy_record',
+        subjectId: row.id,
+        action: 'legacy.transition',
+        payload: {
+          actor_username: req.user!.username, category: row.category,
+          status_from: prevStatus, status_to: nextStatus, allowed, reason, rule_source: ruleSource,
+        },
+      });
+    if (statusChanging) {
+      const mergedRules = registry.getMergedTransitions(prevStatus, row.category);
+      if (mergedRules.length === 0) {
+        ruleSource = 'none'; // no rules for this status — open, as before
+      } else {
+        const rule: TransitionSnapshot | undefined = mergedRules.find((t) => t.toStatus === nextStatus && t.allowed);
+        if (!rule) {
+          auditTransition(false, 'edge_denied');
+          res.status(400).json({ error: `Status ${prevStatus} can only change to ${mergedRules.filter((t) => t.allowed).map((t) => t.toStatus).join(', ')}` });
+          return;
+        }
+        ruleSource = rule.categoryCode ? 'category' : 'global';
+        const isPrivileged = req.user!.role === 'admin' || req.user!.role === 'dev';
+        if (rule.requiresAdmin && !isPrivileged) {
+          auditTransition(false, 'permission_denied');
+          res.status(403).json({ error: 'Admin privileges required for this status change' });
+          return;
+        }
+        if (rule.requiresDueDate && !String(merged.dueDate ?? row.due_date ?? '').trim()) {
+          auditTransition(false, 'due_date_required');
+          res.status(400).json({ error: 'A due date is required before this status change' });
+          return;
+        }
       }
     }
     db.prepare(
@@ -511,7 +547,7 @@ export function recordsRouter(db: DatabaseSync, registry: DomainRegistry): Route
         category = ?, request_no = ?, revision_no = ?, description = ?, zone = ?, floor = ?,
         engineer = ?, fork = ?, sent_date = ?, sent_by_consultant_date = ?, reply_date = ?,
         reply_by_contractor_date = ?, status = ?, hyperlink = ?, data_hyperlink = ?,
-        documents_json = ?, updated_at = datetime('now')
+        documents_json = ?, due_date = ?, updated_at = datetime('now')
        WHERE id = ?`,
     ).run(
       String(merged.category ?? ''), String(merged.requestNo ?? ''), String(merged.revisionNo ?? ''),
@@ -520,11 +556,18 @@ export function recordsRouter(db: DatabaseSync, registry: DomainRegistry): Route
       String(merged.sentByConsultantDate ?? ''), String(merged.replyDate ?? ''),
       String(merged.replyByContractorDate ?? ''), String(merged.status ?? 'P'),
       String(merged.hyperlink ?? ''), String(merged.dataHyperlink ?? ''),
-      String(data.documents !== undefined ? data.documents : (row.documents_json || '[]')), row.id,
+      String(data.documents !== undefined ? data.documents : (row.documents_json || '[]')),
+      // mventor-ticket-013: persist the merged due date — the column existed
+      // (migration 19) but PATCH silently dropped it; transition
+      // prerequisites now depend on it.
+      String(merged.dueDate ?? ''), row.id,
     );
     const updated = db
       .prepare('SELECT * FROM records WHERE id = ?')
       .get(row.id) as unknown as RecordRow;
+    // mventor-ticket-013: the allowed attempt is an audit fact, recorded the
+    // moment the row is mutated (still before any placeholder side-effects).
+    if (statusChanging) auditTransition(true, 'allowed');
     // Held-PP engine (ticket 033): C holds a placeholder; A/B release it; SC→PP
     // deletes the SC record and recreates the placeholder (same revision).
     if (prevStatus !== nextStatus) {
@@ -556,7 +599,7 @@ export function recordsRouter(db: DatabaseSync, registry: DomainRegistry): Route
     );
     // mventor-ticket-011: foundation audit (status transitions captured in payload).
     emitAudit(db, {
-      roleContext: `legacy:${req.user!.role}`,
+      personId: personIdForUser(db, req.user!.id), roleContext: `legacy:${req.user!.role}`,
       subjectType: 'legacy_record',
       subjectId: updated.id,
       action: 'legacy.record.updated',
@@ -588,7 +631,7 @@ r.delete('/:id', adminRequired, (req, res) => {
     );
     // mventor-ticket-011: foundation audit.
     emitAudit(db, {
-      roleContext: `legacy:${req.user!.role}`,
+      personId: personIdForUser(db, req.user!.id), roleContext: `legacy:${req.user!.role}`,
       subjectType: 'legacy_record',
       subjectId: row.id,
       action: 'legacy.record.trashed',
@@ -628,7 +671,7 @@ r.delete('/:id', adminRequired, (req, res) => {
     );
     // mventor-ticket-011: foundation audit.
     emitAudit(db, {
-      roleContext: `legacy:${req.user!.role}`,
+      personId: personIdForUser(db, req.user!.id), roleContext: `legacy:${req.user!.role}`,
       subjectType: 'legacy_record',
       subjectId: row.id,
       action: 'legacy.record.super_edited',
@@ -689,7 +732,7 @@ r.delete('/:id', adminRequired, (req, res) => {
     );
     // mventor-ticket-011: foundation audit.
     emitAudit(db, {
-      roleContext: `legacy:${req.user!.role}`,
+      personId: personIdForUser(db, req.user!.id), roleContext: `legacy:${req.user!.role}`,
       subjectType: 'legacy_record',
       subjectId: created.id,
       action: 'legacy.record.revision',

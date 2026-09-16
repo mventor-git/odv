@@ -1,7 +1,7 @@
 # PROJECT_STATE
 
-Status: v34 + live audit (emission + admin reads); ready for next ticket
-Active: none (012 completed; next: commit review or transition-enforcement — human picks)
-Stable: requests CRUD+FTS+trash, statuses, clusters/zones/floors, cement/labor/checklist/reports, Excel fyler, backup, RTL + 11 new empty foundation tables
+Status: v37; material-chain enforcement LIVE (v37 triggers, balance+evidence rules, derived stage) — identity LIVE too; tickets 013+014+015 UNCOMMITTED
+Active: none (015 completed; handoff §21 next: 016 end-to-end vertical slice — on human order)
+Stable: requests CRUD+FTS+trash, statuses, clusters/zones/floors, cement/labor/checklist/reports, Excel fyler, backup, RTL; NEW live: transition enforcement (SD+IR), audit append+emit+admin reads, identity resolution + guarded API, materials chain API (append-only facts, E1–E6 rules)
 Risks: records() still the live request store (split unenforced); clusters-as-projects remains; no sync/AI; VaultPage≠vault
-Priorities: 1) Org/Project/Assignment model 2) Requirement/Lot/Task/Submission split 3) lifecycle lineage
+Priorities: 1) end-to-end vertical slice (016) 2) regression/perf gate (017) 3) human gates 21 (dual-write, surfaces) after proof

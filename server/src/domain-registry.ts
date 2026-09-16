@@ -187,6 +187,19 @@ export class DomainRegistry {
       .map((t) => t.toStatus);
   }
 
+  /** mventor-ticket-013: category-aware resolution — the global rows
+   *  (categoryCode NULL) for fromStatus form the base map; rows scoped to
+   *  categoryCode override the same (from,to) edge (flags AND allowed) or add
+   *  new edges. Order: globals first (insertion), then category-added edges.
+   *  Categories with no scoped rows resolve to exactly the global rules. */
+  getMergedTransitions(fromStatus: string, categoryCode: string): TransitionSnapshot[] {
+    const t = this.getSnapshot().transitions;
+    const map = new Map<string, TransitionSnapshot>();
+    for (const row of t) if (row.fromStatus === fromStatus && !row.categoryCode) map.set(row.toStatus, row);
+    for (const row of t) if (row.fromStatus === fromStatus && row.categoryCode === categoryCode) map.set(row.toStatus, row);
+    return [...map.values()];
+  }
+
   // --- Fields ---
 
   getFields(category: string): FieldSnapshot[] {

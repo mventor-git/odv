@@ -444,6 +444,18 @@ CREATE INDEX IF NOT EXISTS idx_assign_person ON role_assignments(person_id);
 CREATE INDEX IF NOT EXISTS idx_assign_role ON role_assignments(project_role_id);
 CREATE INDEX IF NOT EXISTS idx_deleg_from ON delegations(from_assignment_id);
 
+-- mventor-ticket-014: users↔persons bridge (additive; legacy users untouched).
+-- 1:1 by default (product question whether one person may hold several logins
+-- stays open — UNIQUE here is the conservative answer). resolveActor() turns a
+-- session into a person + memberships + DERIVED-live assignments/delegations;
+-- audit emits gain typed person_id. The legacy table is never modified.
+CREATE TABLE IF NOT EXISTS user_person_links (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+  person_id INTEGER NOT NULL UNIQUE REFERENCES persons(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 -- mventor-ticket-008: Append-only audit trail (additive; GAP-AUDIT foundation half).
 -- Every important action is a fact row: who (person/org/role-context; NULL person =
 -- system actor) × where (project) × what (polymorphic subject) × action × why.
@@ -515,6 +527,16 @@ CREATE TABLE IF NOT EXISTS material_events (
 );
 CREATE INDEX IF NOT EXISTS idx_lot_def ON material_lots(def_id);
 CREATE INDEX IF NOT EXISTS idx_evt_lot ON material_events(lot_id);
+
+-- mventor-ticket-015: material events are FACTS — movement history can be
+-- appended, never rewritten (traceability rule E1; mirrors audit_events 008).
+-- Corrections are compensating events, not updates.
+CREATE TRIGGER IF NOT EXISTS material_events_no_update BEFORE UPDATE ON material_events BEGIN
+  SELECT RAISE(ABORT, 'material_events is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS material_events_no_delete BEFORE DELETE ON material_events BEGIN
+  SELECT RAISE(ABORT, 'material_events is append-only');
+END;
 
 -- User-added scan machines (ticket 067) — the built-in catalog lives in
 -- domain.ts (SCAN_SERIES); admins can add custom printers here.
@@ -871,7 +893,7 @@ function migrateRecordsActiveKeyUnique(db: DatabaseSync): void {
 
 /** V5-003: Current migration level. New databases start here — they get all
  *  tables created by SCHEMA and skip the numbered migrations below. */
-const CURRENT_VERSION = 34;
+const CURRENT_VERSION = 37;
 
 /** V5-003: Named migration list. Each entry runs at most once, tracked in
  *  schema_version. Order matters — later migrations may depend on earlier ones. */
@@ -924,6 +946,16 @@ const MIGRATIONS: Array<{ version: number; name: string; sql: string }> = [
   // mventor-ticket-009: material domain for existing DBs (fresh DBs get these
   // from SCHEMA; no semicolon-bearing bodies here so inline SQL is safe).
   { version: 34, name: 'material-foundation', sql: `CREATE TABLE IF NOT EXISTS material_defs (id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER NOT NULL REFERENCES projects(id), code TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', unit TEXT NOT NULL DEFAULT '', payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (project_id, code)); CREATE TABLE IF NOT EXISTS material_lots (id INTEGER PRIMARY KEY AUTOINCREMENT, def_id INTEGER NOT NULL REFERENCES material_defs(id), code TEXT NOT NULL DEFAULT '', quantity REAL NOT NULL DEFAULT 0, source_kind TEXT NOT NULL DEFAULT 'contractor_supplied' CHECK (source_kind IN ('contractor_supplied','owner_supplied')), supplier_org_id INTEGER REFERENCES organizations(id), status TEXT NOT NULL DEFAULT 'expected' CHECK (status IN ('expected','received','accepted','rejected','consumed','returned','wasted')), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE (def_id, code)); CREATE TABLE IF NOT EXISTS material_events (id INTEGER PRIMARY KEY AUTOINCREMENT, lot_id INTEGER NOT NULL REFERENCES material_lots(id), kind TEXT NOT NULL DEFAULT 'receipt' CHECK (kind IN ('purchase','receipt','storage_transfer','consumption','return','waste')), quantity REAL NOT NULL DEFAULT 0, from_ref TEXT NOT NULL DEFAULT '', to_ref TEXT NOT NULL DEFAULT '', evidence_id INTEGER REFERENCES evidence(id), payload_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL DEFAULT (datetime('now'))); CREATE INDEX IF NOT EXISTS idx_lot_def ON material_lots(def_id); CREATE INDEX IF NOT EXISTS idx_evt_lot ON material_events(lot_id)` },
+  // mventor-ticket-013: DATA-only. First category-scoped transition rules (SD +
+  // IR). Non-seeded categories still resolve to the global (category_code NULL)
+  // rules and behave byte-for-byte as before. Each row guarded with NOT EXISTS
+  // so an admin-created edge is never duplicated; runner itself is version-gated.
+  { version: 35, name: 'transition-category-seed', sql: `INSERT INTO domain_transitions (from_status, to_status, category_code, allowed, requires_admin, creates_revision, creates_pp_placeholder, requires_due_date) SELECT 'P','A','SD',1,1,0,0,0 WHERE NOT EXISTS (SELECT 1 FROM domain_transitions WHERE from_status='P' AND to_status='A' AND category_code='SD'); INSERT INTO domain_transitions (from_status, to_status, category_code, allowed, requires_admin, creates_revision, creates_pp_placeholder, requires_due_date) SELECT 'P','B','SD',1,1,0,0,0 WHERE NOT EXISTS (SELECT 1 FROM domain_transitions WHERE from_status='P' AND to_status='B' AND category_code='SD'); INSERT INTO domain_transitions (from_status, to_status, category_code, allowed, requires_admin, creates_revision, creates_pp_placeholder, requires_due_date) SELECT 'P','C','SD',1,0,1,1,0 WHERE NOT EXISTS (SELECT 1 FROM domain_transitions WHERE from_status='P' AND to_status='C' AND category_code='SD'); INSERT INTO domain_transitions (from_status, to_status, category_code, allowed, requires_admin, creates_revision, creates_pp_placeholder, requires_due_date) SELECT 'P','D','SD',1,1,0,0,0 WHERE NOT EXISTS (SELECT 1 FROM domain_transitions WHERE from_status='P' AND to_status='D' AND category_code='SD'); INSERT INTO domain_transitions (from_status, to_status, category_code, allowed, requires_admin, creates_revision, creates_pp_placeholder, requires_due_date) SELECT 'P','A','IR',1,1,0,0,0 WHERE NOT EXISTS (SELECT 1 FROM domain_transitions WHERE from_status='P' AND to_status='A' AND category_code='IR'); INSERT INTO domain_transitions (from_status, to_status, category_code, allowed, requires_admin, creates_revision, creates_pp_placeholder, requires_due_date) SELECT 'P','C','IR',1,0,1,1,1 WHERE NOT EXISTS (SELECT 1 FROM domain_transitions WHERE from_status='P' AND to_status='C' AND category_code='IR'); INSERT INTO domain_transitions (from_status, to_status, category_code, allowed, requires_admin, creates_revision, creates_pp_placeholder, requires_due_date) SELECT 'P','D','IR',1,1,0,0,0 WHERE NOT EXISTS (SELECT 1 FROM domain_transitions WHERE from_status='P' AND to_status='D' AND category_code='IR')` },
+  // mventor-ticket-014: users↔persons bridge for existing DBs (fresh DBs get
+  // it from SCHEMA; CREATE IF NOT EXISTS keeps this idempotent).
+  { version: 36, name: 'user-person-links', sql: `CREATE TABLE IF NOT EXISTS user_person_links (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES users(id), person_id INTEGER NOT NULL UNIQUE REFERENCES persons(id), created_at TEXT NOT NULL DEFAULT (datetime('now')))` },
+  // mventor-ticket-015: programmatic — trigger bodies contain semicolons.
+  { version: 37, name: 'material-event-immutability', sql: '' },
 ];
 
 /** V5-003: Get the current max version from schema_version. */
@@ -949,6 +981,7 @@ function applyMigration(db: DatabaseSync, migration: { version: number; name: st
   if (migration.version === 25) { seedProjectIdentity(db); return; }
   if (migration.version === 27) { fixRfiNcrColumns(db); return; }
   if (migration.version === 33) { applyAuditTrail(db); return; }
+  if (migration.version === 37) { applyMaterialEventImmutability(db); return; }
   if (!migration.sql) return;
 
   db.exec('BEGIN');
@@ -1076,11 +1109,27 @@ function applyAuditTrail(db: DatabaseSync): void {
   console.log('[odv] Migration 33 (audit-trail): ensured audit_events + append-only triggers.');
 }
 
+/** mventor-ticket-015: Programmatic migration — DB-level append-only protection
+ *  for material_events (movement facts can be corrected only by a compensating
+ *  event, never rewritten). Fresh DBs get the same triggers from SCHEMA;
+ *  CREATE TRIGGER IF NOT EXISTS keeps this idempotent. */
+function applyMaterialEventImmutability(db: DatabaseSync): void {
+  db.exec(`CREATE TRIGGER IF NOT EXISTS material_events_no_update BEFORE UPDATE ON material_events BEGIN
+    SELECT RAISE(ABORT, 'material_events is append-only');
+  END`);
+  db.exec(`CREATE TRIGGER IF NOT EXISTS material_events_no_delete BEFORE DELETE ON material_events BEGIN
+    SELECT RAISE(ABORT, 'material_events is append-only');
+  END`);
+  db.exec(`INSERT OR IGNORE INTO schema_version (version, name) VALUES (37, 'material-event-immutability')`);
+  console.log('[odv] Migration 37 (material-event-immutability): ensured append-only triggers on material_events.');
+}
+
 /** Ticket 136: RFI is a normal request (contractor sends sentDate, consultant
  *  replies replyDate); NCR is inverted (consultant sends sentByConsultantDate,
  *  contractor replies replyByContractorDate). Patch the live
  *  domain_categories.columns_json for existing DBs (the /api/meta source of
- *  truth). Idempotent. */function fixRfiNcrColumns(db: DatabaseSync): void {
+ *  truth). Idempotent. */
+function fixRfiNcrColumns(db: DatabaseSync): void {
   db.prepare('UPDATE domain_categories SET columns_json = ? WHERE code = ?').run(
     JSON.stringify(COLS_RFI),
     'RFI',

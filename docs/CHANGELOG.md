@@ -13,4 +13,7 @@
 2026-09-12 — mventor-ticket-010: HQ support representation proven on audit_events (support.* mapping, no new table); no code change; smoke 45/45.
 2026-09-12 — mventor-ticket-011: audit emission live (helper + 5 records hooks, fail-safe, legacy codes identical); smoke 45/45.
 2026-09-12 — mventor-ticket-012: read-only admin GET /api/audit (401/403 enforced, filters); smoke 45/45.
-2026-09-12 — batch commit: tickets 001-012 (schema v28-v34, audit emission + reads, memory docs).
+2026-09-14 — batch commit: tickets 001-012 (schema v28-v34, audit emission + reads, memory docs).
+2026-09-14 — mventor-ticket-013: category-scoped transition enforcement (domain_transitions) live for SD+IR — requires_admin/requires_due_date honoured, allowed+denied audits, non-seeded categories provably unchanged, PATCH now persists due_date (legacy drop fixed).
+2026-09-14 — mventor-ticket-014: v36 users↔persons (1:1 unique) + identity resolver (derived windows) + guarded identity API (membership-required assignments, time-bounded never-self same-org delegations, revoke-never-delete, admin-gated) + typed audit attribution (person_id on legacy emits when linked; unlinked byte-identical).
+2026-09-14 — mventor-ticket-015: v37 material chain enforcement — DB append-only triggers on material_events, physical balance rule (reducers can't exceed lot quantity), evidence existence + project-match guard, stage/remaining derived from event facts only, admin-gated typed audits. Migration upgrade + reopen proven; 36-check probe + stage check green.

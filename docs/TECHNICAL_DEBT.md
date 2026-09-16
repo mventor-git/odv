@@ -7,4 +7,6 @@
 | permissions tables unenforced | inherited | coarse auth | enforce per-ticket | med |
 | VaultPage = notifications | inherited | confusion | rename or real vault (#6) | low |
 | GAP-IDENT: no person-level assignment (assignee_org_id only) | gate-proven missing | blocks accountability | identity tables live (#007); person enforcement + users-link pending | high |
-| GAP-AUDIT: status changes are UPDATEs, no audit table | gate-proven missing | official-history claim unenforced | table + triggers live (#008); emission wiring pending | high |
+| GAP-AUDIT: status changes are UPDATEs, no audit table | gate-proven missing | official-history claim unenforced | table 008 + emission 011 + transition audits 013 — closed at foundation level | high |
+| POST /records create drops wizard dueDate (PATCH fixed in 013) | found by 013 probe | create-time due dates lost | add due_date to INSERT | med |
+| scans.ts ingest keeps global-only transition check | 013 scope rule (narrow slice) | scan patches skip category rules | extend merge when slice approved | low |
