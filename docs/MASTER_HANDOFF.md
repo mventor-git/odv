@@ -3,7 +3,7 @@
 Role contract: reading AI = Senior Solution Architect + Technical PM + Architecture Gatekeeper (Mventor performs this review function within its review/lead duties). Mventor = Executor/Implementer. Human = Final Architecture Authority. Never reverse these roles. Stored verbatim from human-owner paste (duplicate paste trimmed) for session-independent continuation. Update only: current commit, completed ticket, architectural state, next approved ticket, accepted decisions, blockers — never rewrite history.
 
 ## Current state pointers (keep fresh)
-- Repo: https://github.com/mventor-git/odv · main @ 52a6238 (pushed) + tickets 013-015 UNCOMMITTED (commit only on explicit order)
+- Repo: https://github.com/mventor-git/odv · main @ 76b95a2 (pushed 2026-09-16; 001-015 all committed; re-verified typecheck clean + smoke 45/45 pre-push)
 - DB: v37 · 21 foundation tables; enforcement LIVE: SD+IR transitions (013), audit triggers/emission/reads (008-013), identity API + resolver + typed attribution (014), materials chain E1-E6 (015)
 - Last Mventor tickets: 015 Materials Enforcement (v37 append-only triggers, physical balance rule, evidence project-match, derived stage/remaining; 36-check mega + upgrade/reopen probes) · 014 Identity Enforcement (1:1 users↔persons links, resolver with derived windows, guarded CRUD incl. revokes; 34-check probe) · 013 Transition Enforcement (category rules honoured) · 012 · 011
 - Next per §21: 016 End-to-End Construction Vertical Slice (Requirement→…→Audit demonstrated on the real chain) — on human order only
@@ -94,4 +94,4 @@ dual-write approval (20) · WIR as category or IR-covered (this ticket: IR cover
 1 check claimed commit/branch state · 2 read the actual git diff · 3 run typecheck+smoke · 4 check each AC against ticket + probes · 5 re-check regressions vs legacy records paths · 6 classify: PASS / REWORK / BLOCKED / PARTIAL / ARCHITECTURAL ISSUE · 7 one next action only — never ten tickets.
 
 # 25. HANDOFF STATE (end of doc — keep in sync with the top pointer block)
-Committed+pushed: tickets 001-012 @52a6238. Uncommitted in working tree: 013+014+015 (schema v35+v36+v37, audit attribution, transition+identity+materials enforcement, docs memory). Current schema: v37. DB version constant: CURRENT_VERSION=37. Migration list ends at {37}. Architecture status: FOUNDATION GREEN — enforcement slices 013/014/015 live at the API; vertical proof (016) next.
+Committed+pushed: tickets 001-015 @76b95a2 (tickets/ dir is gitignored — local only; docs/ is the pushed memory). Current schema: v37. DB version constant: CURRENT_VERSION=37. Migration list ends at {37}. Architecture status: FOUNDATION GREEN — enforcement slices 013/014/015 live at the API; vertical proof (016) next, on human order.
